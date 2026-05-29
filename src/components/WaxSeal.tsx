@@ -19,15 +19,16 @@ export const WaxSeal: React.FC<WaxSealProps> = ({ onClick, isOpen = false }) => 
       whileHover={{ scale: 1.05 }}
       whileTap={{ scale: 0.92 }}
       animate={{
-        scale: isOpen ? 0.8 : 1,
-        y: isOpen ? -30 : 0,
+        scale: isOpen ? 0.4 : 1,
+        y: isOpen ? -45 : 0,
         opacity: isOpen ? 0 : 1,
         pointerEvents: isOpen ? 'none' : 'auto',
       }}
       transition={{
         type: 'spring',
-        stiffness: 280,
-        damping: 24,
+        stiffness: isOpen ? 250 : 120, // gentler spring bounce when stamping down
+        damping: isOpen ? 22 : 15,
+        delay: isOpen ? 0 : 1.35, // wait for letter slide (0.85s) + flap fold down (0.5s)
       }}
     >
       {/* Organic wax seal background (melted irregular shape) */}

@@ -16,7 +16,6 @@ export interface GuestNote {
   message: string;
   is_handwritten: boolean;
   photo_url: string;
-  handwriting_url?: string | null;
   created_at?: string;
   device_info?: string;
 }

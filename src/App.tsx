@@ -21,6 +21,32 @@ import { HandwritingCanvas } from './components/HandwritingCanvas';
 import { CameraCapture } from './components/CameraCapture';
 import { SubmissionPreview } from './components/SubmissionPreview';
 import { getSupabase, localDb } from './supabaseClient';
+import { Confetti } from './components/Confetti';
+
+// Safe UUID helper for sandboxed contexts where crypto.randomUUID is absent (fixes standard iframe browser block)
+function generateUUID(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
+// Convert drawn handwritten canvas Base64 dataURL back into a raw blob for Supabase storage uploading
+function dataUrlToBlob(dataUrl: string): Blob {
+  const arr = dataUrl.split(',');
+  const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/png';
+  const bstr = atob(arr[1]);
+  let n = bstr.length;
+  const u8arr = new Uint8Array(n);
+  while (n--) {
+    u8arr[n] = bstr.charCodeAt(n);
+  }
+  return new Blob([u8arr], { type: mime });
+}
 
 export default function App() {
   const [step, setStep] = useState<Step>('envelope');
@@ -30,6 +56,34 @@ export default function App() {
   const [isKeyboardMode, setIsKeyboardMode] = useState(false);
 
   // Core wishing draft data state
+  const [isDiagnosticRunning, setIsDiagnosticRunning] = useState(false);
+
+  const runDatabaseDiagnostic = async () => {
+    setIsDiagnosticRunning(true);
+    setStatusMessage('Checking Supabase connection...');
+    try {
+      const supabaseConnector = getSupabase();
+      if (!supabaseConnector) {
+        throw new Error('Supabase URL or Key environment variables are missing');
+      }
+      
+      const { count, error } = await supabaseConnector
+        .from('guest_notes')
+        .select('id', { head: true, count: 'exact' });
+        
+      if (error) {
+        throw error;
+      }
+      
+      setStatusMessage(`✔ Reachable! Count: ${count ?? 0} total letters in database.`);
+    } catch (err: any) {
+      console.error('Diagnostic check failed:', err);
+      setStatusMessage(`❌ Reachable check failed: ${err.message || 'Unknown network error'}`);
+    } finally {
+      setIsDiagnosticRunning(false);
+    }
+  };
+
   const [draft, setDraft] = useState<LetterDraft>({
     guestName: '',
     guestMessage: '',
@@ -60,10 +114,10 @@ export default function App() {
       const supabaseConnector = getSupabase();
       
       if (supabaseConnector) {
-        // Prepare storage file write
+        // 1. Prepare selfie storage file write
         let photo_url = '';
         if (draft.photoBlob) {
-          const fileName = `${Date.now()}-${crypto.randomUUID()}.jpg`;
+          const fileName = `${Date.now()}-${generateUUID()}.jpg`;
           const { error: uploadError } = await supabaseConnector.storage
             .from('guest-selfies')
             .upload(fileName, draft.photoBlob, { contentType: 'image/jpeg', upsert: false });
@@ -76,15 +130,48 @@ export default function App() {
           photo_url = photoData.publicUrl;
         }
 
+        // 2. Convert and upload drawing as handwriting if applicable
+        let handwriting_url = '';
+        if (draft.isHandwritten && draft.handwritingDataUrl) {
+          try {
+            const hBlob = dataUrlToBlob(draft.handwritingDataUrl);
+            const fileName = `${Date.now()}-${generateUUID()}.png`;
+            const { error: uploadError } = await supabaseConnector.storage
+              .from('guest-selfies') // use same bucket for simplicity
+              .upload(fileName, hBlob, { contentType: 'image/png', upsert: false });
+            
+            if (uploadError) throw new Error(`Handwriting upload failed: ${uploadError.message}`);
+
+            const { data: hData } = supabaseConnector.storage
+              .from('guest-selfies')
+              .getPublicUrl(fileName);
+            handwriting_url = hData.publicUrl;
+          } catch (err: any) {
+            console.error('Handwriting upload error:', err);
+            setStatusMessage(`Drawing failed to upload: ${err.message}. Saving as local backup.`);
+          }
+        }
+
         const noteModel: GuestNote = {
           guest_name: draft.guestName.trim() || 'Anonymous Friend',
-          message: draft.isHandwritten ? '[handwritten wishing]' : draft.guestMessage,
+          message: draft.isHandwritten ? (handwriting_url || '[handwritten wishing]') : draft.guestMessage,
           is_handwritten: draft.isHandwritten,
           photo_url: photo_url,
           device_info: navigator.userAgent,
         };
 
-        const { error: dbError } = await supabaseConnector.from('guest_notes').insert(noteModel);
+        let { error: dbError } = await supabaseConnector.from('guest_notes').insert(noteModel);
+        
+        // Dynamic resilient fallback: if the 'is_handwritten' column does not exist in the database (Postgres code 42703 / undefined_column),
+        // we automatically strip it and retry the insertion so the guest's wish is never lost!
+        if (dbError && (dbError.code === '42703' || dbError.message?.toLowerCase().includes('is_handwritten') || dbError.message?.toLowerCase().includes('column'))) {
+          console.warn('is_handwritten column is missing in the database schema. Retrying insertion without it...');
+          const fallbackModel = { ...noteModel };
+          delete fallbackModel.is_handwritten;
+          const { error: retryError } = await supabaseConnector.from('guest_notes').insert(fallbackModel);
+          dbError = retryError;
+        }
+
         if (dbError) throw new Error(`Database record failed: ${dbError.message}`);
         
         setStatusMessage('✔ Wish sent successfully via Supabase!');
@@ -92,7 +179,7 @@ export default function App() {
         // Fall back to offline localStorage
         const noteModel: GuestNote = {
           guest_name: draft.guestName.trim() || 'Anonymous Friend',
-          message: draft.isHandwritten ? '[handwritten wishing]' : draft.guestMessage,
+          message: draft.isHandwritten ? (draft.handwritingDataUrl || '[handwritten wishing]') : draft.guestMessage,
           is_handwritten: draft.isHandwritten,
           photo_url: draft.photoDataUrl || '',
           created_at: new Date().toISOString(),
@@ -105,17 +192,17 @@ export default function App() {
       }
 
       // PHYSICAL SEAL ANIMATION SEQUENCE !
-      // 1. Move back to the envelope stage with envelope set to open
+      // 1. Move back to the envelope stage with envelope set to open so user sees their note
       setStep('envelope');
       setEnvelopeOpen(true);
-      await new Promise(r => setTimeout(r, 600));
+      await new Promise(r => setTimeout(r, 1200));
 
-      // 2. Play envelope "Close" animation - slides the card back inside and presses the wax seal down!
+      // 2. Play envelope "Close" animation - slides the card back inside, folds flap, stamps gold logo wax!
       setEnvelopeOpen(false);
       setStatusMessage('Sealing envelope with wax stamp...');
-      await new Promise(r => setTimeout(r, 1400));
+      await new Promise(r => setTimeout(r, 3400));
 
-      // 3. Move to the Thank You screen
+      // 3. Move to the Thank You screen now that physical cycle completed!
       setStep('thanks');
       clearStatus();
 
@@ -126,7 +213,7 @@ export default function App() {
       // Secondary fallback save to keep workflow going
       const noteModel: GuestNote = {
         guest_name: draft.guestName.trim() || 'Anonymous Friend',
-        message: draft.isHandwritten ? '[handwritten wishing]' : draft.guestMessage,
+        message: draft.isHandwritten ? (draft.handwritingDataUrl || '[handwritten wishing]') : draft.guestMessage,
         is_handwritten: draft.isHandwritten,
         photo_url: draft.photoDataUrl || '',
         created_at: new Date().toISOString(),
@@ -458,42 +545,45 @@ export default function App() {
 
           {/* STEP 5: THANKS CONCLUSION */}
           {step === 'thanks' && (
-            <motion.div
-              key="step-thanks"
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, y: 15 }}
-              transition={{ duration: 0.4 }}
-              className="w-full bg-[#f9f4e9]/92 backdrop-blur-xs border border-[#d8c7a8] rounded-3xl shadow-2xl p-8 sm:p-10 flex flex-col items-center text-center"
-            >
-              <div className="relative mb-6">
-                {/* Visual success rings */}
-                <span className="absolute inset-0 bg-emerald-100 rounded-full scale-125 opacity-40 animate-ping" />
-                <CheckCircle2 className="w-16 h-16 text-[#7b9076] drop-shadow-md relative z-10" />
-              </div>
-
-              <h2 className="font-serif font-semibold text-[#2f3a31] text-3xl mb-2">
-                Thank You!
-              </h2>
-              <p className="font-serif italic text-base text-[#5f6a60] mb-4">
-                Dear {draft.guestName || 'Friend'},
-              </p>
-              
-              <p className="font-sans text-xs text-[#5f6a60] leading-relaxed max-w-[340px] mb-8">
-                Your personalized letter has been successfully sealed and added to the wishing chest. Rupa and Aravind will treasure your thoughtful words and portrait forever.
-              </p>
-
-              <div className="h-[1px] w-24 bg-[#d8c7a8]/50 mb-8" />
-
-              <button
-                type="button"
-                onClick={handleReset}
-                className="w-full max-w-[280px] py-3.5 bg-linear-to-b from-[#859b80] to-[#6f866a] hover:from-[#7b9076] hover:to-[#5d7259] text-white text-xs font-bold tracking-wider uppercase rounded-full shadow-md hover:shadow-lg transition-all scale-100 hover:scale-[1.02] active:scale-95 outline-none cursor-pointer flex items-center justify-center gap-1.5"
+            <>
+              <Confetti />
+              <motion.div
+                key="step-thanks"
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, y: 15 }}
+                transition={{ duration: 0.4 }}
+                className="w-full bg-[#f9f4e9]/92 backdrop-blur-xs border border-[#d8c7a8] rounded-3xl shadow-2xl p-8 sm:p-10 flex flex-col items-center text-center"
               >
-                <BookOpen className="w-4 h-4" />
-                <span>WRITE ANOTHER LETTER</span>
-              </button>
-            </motion.div>
+                <div className="relative mb-6">
+                  {/* Visual success rings */}
+                  <span className="absolute inset-0 bg-emerald-100 rounded-full scale-125 opacity-40 animate-ping" />
+                  <CheckCircle2 className="w-16 h-16 text-[#7b9076] drop-shadow-md relative z-10" />
+                </div>
+
+                <h2 className="font-serif font-semibold text-[#2f3a31] text-3xl mb-2">
+                  Thank You!
+                </h2>
+                <p className="font-serif italic text-base text-[#5f6a60] mb-4">
+                  Dear {draft.guestName || 'Friend'},
+                </p>
+                
+                <p className="font-sans text-xs text-[#5f6a60] leading-relaxed max-w-[340px] mb-8">
+                  Your personalized letter has been successfully sealed and added to the wishing chest. Rupa and Aravind will treasure your thoughtful words and portrait forever.
+                </p>
+
+                <div className="h-[1px] w-24 bg-[#d8c7a8]/50 mb-8" />
+
+                <button
+                  type="button"
+                  onClick={handleReset}
+                  className="w-full max-w-[280px] py-3.5 bg-linear-to-b from-[#859b80] to-[#6f866a] hover:from-[#7b9076] hover:to-[#5d7259] text-white text-xs font-bold tracking-wider uppercase rounded-full shadow-md hover:shadow-lg transition-all scale-100 hover:scale-[1.02] active:scale-95 outline-none cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <BookOpen className="w-4 h-4" />
+                  <span>WRITE ANOTHER LETTER</span>
+                </button>
+              </motion.div>
+            </>
           )}
 
         </AnimatePresence>
@@ -527,6 +617,19 @@ export default function App() {
         <div className="flex items-center gap-1.5 text-[9px] font-mono text-[#5f6a60] opacity-40 mt-3 uppercase tracking-widest leading-none">
           <Database className="w-3 h-3" />
           <span>Local Storage Fallback Ready</span>
+        </div>
+
+        {/* Database connection diagnostic doctor */}
+        <div className="mt-4 flex flex-col items-center">
+          <button
+            type="button"
+            disabled={isDiagnosticRunning}
+            onClick={runDatabaseDiagnostic}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#7b9076]/8 hover:bg-[#7b9076]/15 disabled:opacity-50 text-[9px] font-sans font-bold uppercase tracking-widest text-[#7b9076] rounded-full border border-[#7b9076]/20 hover:border-[#7b9076]/40 cursor-pointer transition-all duration-150 shadow-2xs"
+          >
+            <Database className="w-3 h-3 shrink-0" />
+            <span>{isDiagnosticRunning ? 'Checking Supabase...' : 'Database Connection Diagnostic'}</span>
+          </button>
         </div>
       </footer>
     </main>

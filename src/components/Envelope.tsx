@@ -59,8 +59,8 @@ export const Envelope: React.FC<EnvelopeProps> = ({
             animate={isOpen ? 'open' : 'closed'}
             transition={{
               type: 'spring',
-              stiffness: 140,
-              damping: 22,
+              stiffness: isOpen ? 120 : 55,
+              damping: isOpen ? 22 : 16,
               mass: 1.1,
             }}
             onClick={(e) => {
@@ -154,11 +154,11 @@ export const Envelope: React.FC<EnvelopeProps> = ({
             animate={isOpen ? 'open' : 'closed'}
             transition={{
               type: 'spring',
-              stiffness: 110,
-              damping: 20,
+              stiffness: isOpen ? 90 : 45,
+              damping: isOpen ? 18 : 14,
               mass: 1.1,
-              // Sequenced delays matching open/close
-              delay: isOpen ? 0 : 0.35,
+              // Sequenced delays matching open/close - delay closing by 0.85s to let the letter slide in first
+              delay: isOpen ? 0 : 0.85,
             }}
             className="absolute top-0 inset-x-0 h-1/2 cursor-pointer z-45"
             style={{

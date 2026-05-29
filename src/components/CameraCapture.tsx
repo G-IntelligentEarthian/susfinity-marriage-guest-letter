@@ -45,6 +45,8 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
+        // Explicitly trigger play to force video display in iframe sandboxes
+        videoRef.current.play().catch(e => console.warn('Autoplay prevented or video play error:', e));
       }
       setHasPermission(true);
     } catch (err) {
@@ -177,7 +179,7 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({
             <video
               ref={videoRef}
               playsInline
-              autoplay
+              autoPlay
               muted
               className="w-full h-full object-cover scale-x-[-1]" // mirror for live view
             />

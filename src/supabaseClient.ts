@@ -24,6 +24,18 @@ export function getSupabase(): SupabaseClient | null {
   return null;
 }
 
+// Safe fallback helper for sandboxed contexts where crypto.randomUUID is absent
+function generateUUID(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 // Low-overhead persistent localStorage manager for zero-config offline runs
 const LOCAL_STORAGE_KEY = 'susfinity_guest_letters';
 
@@ -45,7 +57,7 @@ export const localDb = {
         ...current,
         {
           ...note,
-          id: note.id || crypto.randomUUID(),
+          id: note.id || generateUUID(),
           created_at: note.created_at || new Date().toISOString(),
         }
       ];
