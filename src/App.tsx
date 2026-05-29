@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Heart, 
@@ -57,6 +57,33 @@ export default function App() {
 
   // Core wishing draft data state
   const [isDiagnosticRunning, setIsDiagnosticRunning] = useState(false);
+  const [totalWishesCount, setTotalWishesCount] = useState<number | null>(null);
+
+  const fetchWishesCount = async () => {
+    try {
+      const supabaseConnector = getSupabase();
+      let dbCount = 0;
+      if (supabaseConnector) {
+        const { count, error } = await supabaseConnector
+          .from('guest_notes')
+          .select('id', { count: 'exact', head: true });
+        
+        if (!error && count !== null) {
+          dbCount = count;
+        }
+      }
+      const localCount = localDb.getNotes().length;
+      const aggregateCount = Math.max(dbCount, localCount);
+      setTotalWishesCount(aggregateCount);
+    } catch (e) {
+      console.error('Error fetching count:', e);
+      setTotalWishesCount(localDb.getNotes().length);
+    }
+  };
+
+  useEffect(() => {
+    fetchWishesCount();
+  }, []);
 
   const runDatabaseDiagnostic = async () => {
     setIsDiagnosticRunning(true);
@@ -67,15 +94,25 @@ export default function App() {
         throw new Error('Supabase URL or Key environment variables are missing');
       }
       
-      const { count, error } = await supabaseConnector
+      const { count, data, error } = await supabaseConnector
         .from('guest_notes')
-        .select('id', { head: true, count: 'exact' });
+        .select('id', { count: 'exact' });
         
       if (error) {
         throw error;
       }
       
-      setStatusMessage(`✔ Reachable! Count: ${count ?? 0} total letters in database.`);
+      const foundCount = count !== null ? count : (data?.length ?? 0);
+      
+      if (foundCount === 0) {
+        setStatusMessage(`✔ Connected! Count is 0 (Note: If DB actually has entries, please verify RLS SELECT policy is enabled on guest_notes in Supabase)`);
+      } else {
+        setStatusMessage(`✔ Connected! Reachable count in DB is ${foundCount} total entries.`);
+      }
+      
+      // Sync local state
+      const localCount = localDb.getNotes().length;
+      setTotalWishesCount(Math.max(foundCount, localCount));
     } catch (err: any) {
       console.error('Diagnostic check failed:', err);
       setStatusMessage(`❌ Reachable check failed: ${err.message || 'Unknown network error'}`);
@@ -231,6 +268,7 @@ export default function App() {
       clearStatus();
     } finally {
       setIsSubmitting(false);
+      fetchWishesCount();
     }
   };
 
@@ -613,14 +651,24 @@ export default function App() {
           )}
         </AnimatePresence>
 
+        {/* Total Letters count badge */}
+        <div className="mt-4 flex flex-col items-center select-none">
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-[#7b9076]/6 text-[#3c4a3e] border border-[#d8c7a8]/35 text-[10px] font-sans font-semibold uppercase tracking-widest rounded-full shadow-2xs">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#7b9076] animate-pulse shrink-0" />
+            <span>
+              Wishes Shared So Far: <span className="font-mono text-xs font-bold text-[#2f3a31] bg-[#7b9076]/12 px-1.5 py-0.5 rounded-sm ml-1">{totalWishesCount !== null ? totalWishesCount : '...'}</span>
+            </span>
+          </div>
+        </div>
+
         {/* Database offline disclaimer */}
-        <div className="flex items-center gap-1.5 text-[9px] font-mono text-[#5f6a60] opacity-40 mt-3 uppercase tracking-widest leading-none">
+        <div className="flex items-center gap-1.5 text-[9px] font-mono text-[#5f6a60] opacity-35 mt-3.5 uppercase tracking-widest leading-none">
           <Database className="w-3 h-3" />
           <span>Local Storage Fallback Ready</span>
         </div>
 
         {/* Database connection diagnostic doctor */}
-        <div className="mt-4 flex flex-col items-center">
+        <div className="mt-3.5 flex flex-col items-center">
           <button
             type="button"
             disabled={isDiagnosticRunning}
