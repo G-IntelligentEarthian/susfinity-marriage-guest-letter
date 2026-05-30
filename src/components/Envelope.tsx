@@ -9,6 +9,7 @@ interface EnvelopeProps {
   onOpenLetter: () => void;
   guestName?: string;
   hasInputMessage?: boolean;
+  lang?: 'en' | 'ta';
 }
 
 export const Envelope: React.FC<EnvelopeProps> = ({
@@ -17,7 +18,39 @@ export const Envelope: React.FC<EnvelopeProps> = ({
   onOpenLetter,
   guestName = '',
   hasInputMessage = false,
+  lang = 'en',
 }) => {
+  const t = {
+    en: {
+      invitationWishes: "INVITATION WISHES",
+      wishCardBy: "Wish card by",
+      wholesomeLetter: "Your Wholesome Letter",
+      sealedReady: "Sealed and ready for Rupa & Aravind.",
+      clickToWrite: "Click to write your heartfelt wishes to the newly-weds.",
+      readyToSeal: "Ready to Seal",
+      writeNote: "Write Note",
+      tapSeal: "Tap the wax seal to open your letter",
+      unsealed: "The envelope is unsealed",
+      viewEditWishes: "View / Edit Wishes",
+      writeWishes: "Write Wishes",
+      sealingBack: "Sealing back",
+    },
+    ta: {
+      invitationWishes: "வாழ்த்துக்கள்",
+      wishCardBy: "எழுதியவர்:",
+      wholesomeLetter: "உங்களது முழுமையான வாழ்த்து",
+      sealedReady: "ரூபா & அரவிந்த் ஜோடிக்காக சீல் செய்யப்பட்டு தயாராக உள்ளது.",
+      clickToWrite: "புதுமணத் தம்பதியருக்கு உங்களது மனமார்ந்த வாழ்த்துக்களை எழுத கிளிக் செய்க.",
+      readyToSeal: "சீல் செய்ய தயார்",
+      writeNote: "வாழ்த்துகளை எழுதுக",
+      tapSeal: "வாழ்த்து மடலைத் திறக்க மெழுகு முத்திரையைத் தட்டவும்",
+      unsealed: "வாழ்த்து மடல் திறக்கப்பட்டுள்ளது",
+      viewEditWishes: "வாழ்த்தைப் பார்க்க / திருத்த",
+      writeWishes: "வாழ்த்துகளை எழுதுக",
+      sealingBack: "மடலை மூடு",
+    }
+  }[lang];
+
   return (
     <div className="relative flex flex-col items-center justify-center p-4">
       {/* 3D Scene Wrapper with high perspective */}
@@ -78,7 +111,7 @@ export const Envelope: React.FC<EnvelopeProps> = ({
             
             {/* Letter Header */}
             <div className="flex flex-col items-center text-center mt-2">
-              <span className="font-serif italic text-xs tracking-widest text-[#7b9076] uppercase">INVITATION WISHES</span>
+              <span className="font-serif italic text-xs tracking-widest text-[#7b9076] uppercase">{t.invitationWishes}</span>
               <div className="h-[1px] w-12 bg-[#7b9076]/30 my-1" />
             </div>
 
@@ -86,16 +119,16 @@ export const Envelope: React.FC<EnvelopeProps> = ({
             <div className="flex-1 flex flex-col items-center justify-center py-4 my-2 text-center pointer-events-none">
               {guestName ? (
                 <p className="font-serif text-[#2f3a31] text-base font-medium">
-                  Wish card by <span className="font-sans font-bold text-[#7b9076] text-sm tracking-wide block sm:inline">{guestName}</span>
+                  {t.wishCardBy} <span className="font-sans font-bold text-[#7b9076] text-sm tracking-wide block sm:inline">{guestName}</span>
                 </p>
               ) : (
-                <p className="font-serif text-[#2f3a31] text-base font-semibold">Your Wholesome Letter</p>
+                <p className="font-serif text-[#2f3a31] text-base font-semibold">{t.wholesomeLetter}</p>
               )}
               
               <p className="font-sans text-[#5f6a60] text-xs mt-1.5 px-4 leading-relaxed max-w-[280px]">
                 {hasInputMessage 
-                  ? "Sealed and ready for Rupa & Aravind." 
-                  : "Click to write your heartfelt wishes to the newly-weds."}
+                  ? t.sealedReady 
+                  : t.clickToWrite}
               </p>
             </div>
 
@@ -104,12 +137,12 @@ export const Envelope: React.FC<EnvelopeProps> = ({
               {hasInputMessage ? (
                 <>
                   <Lock className="w-3.5 h-3.5" />
-                  <span>Ready to Seal</span>
+                  <span>{t.readyToSeal}</span>
                 </>
               ) : (
                 <>
                   <Edit3 className="w-3.5 h-3.5 animate-pulse" />
-                  <span>Write Note</span>
+                  <span>{t.writeNote}</span>
                 </>
               )}
             </div>
@@ -218,7 +251,7 @@ export const Envelope: React.FC<EnvelopeProps> = ({
           >
             <p className="font-serif italic text-base text-[#5f6a60] flex items-center justify-center gap-1.5 md:text-lg">
               <MailOpen className="w-4 h-4 text-[#7b9076]" />
-              Tap the wax seal to open your letter
+              {t.tapSeal}
             </p>
           </motion.div>
         ) : (
@@ -230,20 +263,20 @@ export const Envelope: React.FC<EnvelopeProps> = ({
             className="text-center mt-6 flex flex-col items-center gap-3 w-full"
           >
             <p className="font-serif italic text-base text-[#5f6a60] md:text-lg">
-              The envelope is unsealed
+              {t.unsealed}
             </p>
             <div className="flex items-center gap-3">
               <button
                 onClick={onOpenLetter}
-                className="px-6 py-2 rounded-full bg-linear-to-b from-[#859b80] to-[#6f866a] hover:from-[#7b9076] hover:to-[#5d7259] text-white text-xs font-semibold tracking-wider uppercase shadow-md transition-all scale-100 hover:scale-[1.03] active:scale-[0.98] outline-none"
+                className="px-6 py-2 rounded-full bg-linear-to-b from-[#859b80] to-[#6f866a] hover:from-[#7b9076] hover:to-[#5d7259] text-white text-xs font-semibold tracking-wider uppercase shadow-md transition-all scale-100 hover:scale-[1.03] active:scale-[0.98] outline-none cursor-pointer"
               >
-                {hasInputMessage ? "View / Edit Wishes" : "Write Wishes"}
+                {hasInputMessage ? t.viewEditWishes : t.writeWishes}
               </button>
               <button
                 onClick={onToggle}
-                className="px-4 py-2 rounded-full border border-[#7b9076]/40 text-[#5f6a60] hover:bg-[#ede4d0] hover:text-[#2f3a31] text-xs font-semibold tracking-wider uppercase transition-all outline-none"
+                className="px-4 py-2 rounded-full border border-[#7b9076]/40 text-[#5f6a60] hover:bg-[#ede4d0] hover:text-[#2f3a31] text-xs font-semibold tracking-wider uppercase transition-all outline-none cursor-pointer"
               >
-                Sealing back
+                {t.sealingBack}
               </button>
             </div>
           </motion.div>

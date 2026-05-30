@@ -22,7 +22,7 @@ import { Step, LetterDraft, GuestNote } from './types';
 import { SusfinityLogo } from './components/SusfinityLogo';
 import { Envelope } from './components/Envelope';
 import { HandwritingCanvas } from './components/HandwritingCanvas';
-import { CameraCapture } from './components/CameraCapture';
+import { UnifiedMediaBooth } from './components/UnifiedMediaBooth';
 import { SubmissionPreview } from './components/SubmissionPreview';
 import { getSupabase, localDb } from './supabaseClient';
 import { Confetti } from './components/Confetti';
@@ -235,6 +235,8 @@ export default function App() {
     }
   };
 
+  const triggerCaptureRef = React.useRef<(() => boolean) | null>(null);
+
   const [draft, setDraft] = useState<LetterDraft>({
     guestName: '',
     guestMessage: '',
@@ -242,6 +244,8 @@ export default function App() {
     handwritingDataUrl: null,
     photoBlob: null,
     photoDataUrl: null,
+    voiceBlob: null,
+    voiceDataUrl: null,
     timestamp: new Date().toISOString(),
   });
 
@@ -334,6 +338,26 @@ export default function App() {
           photo_url = photoData.publicUrl;
         }
 
+        // Prepare voice blessing blob upload
+        let voice_url = '';
+        if (draft.voiceBlob) {
+          try {
+            const fileName = `${Date.now()}-${generateUUID()}.webm`;
+            const { error: uploadError } = await supabaseConnector.storage
+              .from('guest-selfies')
+              .upload(fileName, draft.voiceBlob, { contentType: 'audio/webm', upsert: false });
+            
+            if (uploadError) throw new Error(`Voice upload failed: ${uploadError.message}`);
+
+            const { data: voiceData } = supabaseConnector.storage
+              .from('guest-selfies')
+              .getPublicUrl(fileName);
+            voice_url = voiceData.publicUrl;
+          } catch (err: any) {
+            console.error('Voice note upload error:', err);
+          }
+        }
+
         // 2. Convert and upload drawing as handwriting if applicable
         let handwriting_url = '';
         if (draft.isHandwritten && draft.handwritingDataUrl) {
@@ -356,13 +380,19 @@ export default function App() {
           }
         }
 
+        let dbMessage = draft.isHandwritten ? (handwriting_url || '[handwritten wishing]') : draft.guestMessage;
+        if (voice_url) {
+          dbMessage = `${dbMessage}\n\n[Voice Note: ${voice_url}]`;
+        }
+
         const noteModel: GuestNote = {
-          guest_name: draft.guestName.trim() || 'Anonymous Friend',
-          message: draft.isHandwritten ? (handwriting_url || '[handwritten wishing]') : draft.guestMessage,
-          is_handwritten: draft.isHandwritten,
-          photo_url: photo_url,
-          device_info: navigator.userAgent,
-        };
+            guest_name: draft.guestName.trim() || 'Anonymous Friend',
+            message: draft.isHandwritten ? (handwriting_url || '[handwritten wishing]') : draft.guestMessage,
+            is_handwritten: draft.isHandwritten,
+            photo_url: photo_url,
+            voice_url: voice_url, // Pass the URL separately here
+            device_info: navigator.userAgent,
+          };
 
         let { error: dbError } = await supabaseConnector.from('guest_notes').insert(noteModel);
         
@@ -381,9 +411,14 @@ export default function App() {
         setStatusMessage('✔ Wish sent successfully via Supabase!');
       } else {
         // Fall back to offline localStorage
+        let localMessage = draft.isHandwritten ? (draft.handwritingDataUrl || '[handwritten wishing]') : draft.guestMessage;
+        if (draft.voiceDataUrl) {
+          localMessage = `${localMessage}\n\n[Voice Note: ${draft.voiceDataUrl}]`;
+        }
+
         const noteModel: GuestNote = {
           guest_name: draft.guestName.trim() || 'Anonymous Friend',
-          message: draft.isHandwritten ? (draft.handwritingDataUrl || '[handwritten wishing]') : draft.guestMessage,
+          message: localMessage,
           is_handwritten: draft.isHandwritten,
           photo_url: draft.photoDataUrl || '',
           created_at: new Date().toISOString(),
@@ -415,9 +450,13 @@ export default function App() {
       setStatusMessage(`Unable to sync database. Saving locally. Error: ${e.message}`);
       
       // Secondary fallback save to keep workflow going
+      let fallbackMsg = draft.isHandwritten ? (draft.handwritingDataUrl || '[handwritten wishing]') : draft.guestMessage;
+      if (draft.voiceDataUrl) {
+        fallbackMsg = `${fallbackMsg}\n\n[Voice Note: ${draft.voiceDataUrl}]`;
+      }
       const noteModel: GuestNote = {
         guest_name: draft.guestName.trim() || 'Anonymous Friend',
-        message: draft.isHandwritten ? (draft.handwritingDataUrl || '[handwritten wishing]') : draft.guestMessage,
+        message: fallbackMsg,
         is_handwritten: draft.isHandwritten,
         photo_url: draft.photoDataUrl || '',
         created_at: new Date().toISOString(),
@@ -445,18 +484,23 @@ export default function App() {
     // Message validity check
     if (draft.isHandwritten) {
       if (!draft.handwritingDataUrl) {
-        setStatusMessage('Please draw your message/signature on the canvas, or toggle keyboard mode.');
+        setStatusMessage(lang === 'ta' ? 'தயவுசெய்து உங்களது கையெழுத்து அல்லது வரைபலகையில் எழுதவும்.' : 'Please draw your message/signature on the canvas, or toggle keyboard mode.');
         return;
       }
     } else {
       if (draft.guestMessage.trim().length < 8) {
-        setStatusMessage('Please expand your wishes to at least 8 characters.');
+        setStatusMessage(lang === 'ta' ? 'வாழ்த்துக்கள் குறைந்தது 8 எழுத்துக்கள் இருக்க வேண்டும்.' : 'Please expand your wishes to at least 8 characters.');
         return;
       }
     }
 
+    // Trigger instant video frame photo capture from our Live UnifiedMediaBooth
+    if (triggerCaptureRef.current) {
+      triggerCaptureRef.current();
+    }
+
     clearStatus();
-    setStep('camera');
+    setStep('preview');
   };
 
   const handleReset = () => {
@@ -467,6 +511,8 @@ export default function App() {
       handwritingDataUrl: null,
       photoBlob: null,
       photoDataUrl: null,
+      voiceBlob: null,
+      voiceDataUrl: null,
       timestamp: new Date().toISOString(),
     });
     setEnvelopeOpen(false);
@@ -478,7 +524,7 @@ export default function App() {
     <main className="custom-grid-bg min-h-screen w-full flex flex-col justify-between py-6 px-4 sm:p-8">
       
       {/* 1. TOP HEADER BRANDING & DUAL LANGUAGE ACCESSIBILITY BAR */}
-      <header className="w-full max-w-xl mx-auto flex flex-col items-center mt-2 mb-2 select-none">
+      <header className="w-full max-xl mx-auto flex flex-col items-center mt-2 mb-2 select-none">
         
         {/* Languages Switcher & Senior Accessibility Controls Panel */}
         <div className="w-full flex items-center justify-between px-2 mb-5 gap-3 shrink-0">
@@ -551,7 +597,7 @@ export default function App() {
       </header>
 
       {/* 2. MAIN CARD SHELL CONTAINER WITH STEP SWITCHES */}
-      <section className="flex-1 w-full max-w-xl mx-auto flex flex-col justify-center my-4">
+      <section className={`flex-1 w-full mx-auto flex flex-col justify-center my-4 transition-all duration-300 ${step === 'letter' ? 'max-w-4xl animate-fade-in' : 'max-w-xl'}`}>
         <AnimatePresence mode="wait">
           
           {/* STEP 1: ENVELOPE INTRO */}
@@ -576,6 +622,7 @@ export default function App() {
                 onOpenLetter={() => setStep('letter')}
                 guestName={draft.guestName}
                 hasInputMessage={!!(draft.handwritingDataUrl || draft.guestMessage)}
+                lang={lang}
               />
             </motion.div>
           )}
@@ -599,90 +646,111 @@ export default function App() {
 
               <form onSubmit={handleNextFromLetter} className="flex flex-col gap-5">
                 
-                {/* Guest Name input */}
-                <div className="flex flex-col gap-1.5">
-                  <label htmlFor="guest-name" className={`font-sans font-bold uppercase tracking-wider text-[#5f6a60] transition-all ${isElderMode ? 'text-sm font-black text-[#2f3a31]' : 'text-xs'}`}>
-                    {t.guestNameLabel}
-                  </label>
-                  <input
-                    id="guest-name"
-                    type="text"
-                    maxLength={80}
-                    value={draft.guestName}
-                    onChange={(e) => setDraft(p => ({ ...p, guestName: e.target.value }))}
-                    placeholder={t.guestNamePlaceholder}
-                    className={`w-full border border-[#b7b197] bg-white rounded-xl px-4 py-3 text-[#2f3a31] placeholder-[#b7b197]/75 shadow-xs focus:ring-1 focus:ring-[#7b9076] focus:border-[#7b9076] outline-none transition-all font-sans ${isElderMode ? 'text-lg p-4 font-bold border-2 border-[#7b9076]' : 'text-sm'}`}
-                  />
-                </div>
+                <div className="grid grid-cols-1 md:grid-cols-[210px_1fr] gap-6 items-start">
+                  
+                  {/* Left Column: Live Polaroid Camera & Voice Blessing Mic */}
+                  <div className="w-full">
+                    <UnifiedMediaBooth
+                      onCapturePhoto={(blob, dataUrl) => setDraft(p => ({ ...p, photoBlob: blob, photoDataUrl: dataUrl }))}
+                      onCaptureVoice={(blob, dataUrl) => setDraft(p => ({ ...p, voiceBlob: blob, voiceDataUrl: dataUrl }))}
+                      initialPhotoUrl={draft.photoDataUrl}
+                      initialVoiceUrl={draft.voiceDataUrl}
+                      lang={lang}
+                      isElderMode={isElderMode}
+                      onSetStatus={setStatusMessage}
+                      triggerCaptureRef={triggerCaptureRef}
+                    />
+                  </div>
 
-                {/* Message Entry Block */}
-                <div className="flex flex-col gap-2">
-                  <div className="flex items-center justify-between border-b border-[#d8c7a8]/40 pb-1.5">
-                    <label className={`font-sans font-bold uppercase tracking-wider text-[#5f6a60] flex items-center gap-1.5 transition-all ${isElderMode ? 'text-sm font-black text-[#2f3a31]' : 'text-xs'}`}>
-                      <MessageSquare className="w-3.5 h-3.5 text-[#7b9076]" />
-                      <span>{t.guestMessageLabel}</span>
-                    </label>
+                  {/* Right Column: Name and Text Canvas parameters */}
+                  <div className="w-full flex flex-col gap-4">
+                    {/* Guest Name input */}
+                    <div className="flex flex-col gap-1.5">
+                      <label htmlFor="guest-name" className={`font-sans font-bold uppercase tracking-wider text-[#5f6a60] transition-all ${isElderMode ? 'text-sm font-black text-[#2f3a31]' : 'text-xs'}`}>
+                        {t.guestNameLabel}
+                      </label>
+                      <input
+                        id="guest-name"
+                        type="text"
+                        maxLength={80}
+                        value={draft.guestName}
+                        onChange={(e) => setDraft(p => ({ ...p, guestName: e.target.value }))}
+                        placeholder={t.guestNamePlaceholder}
+                        className={`w-full border border-[#b7b197] bg-white rounded-xl px-4 py-3 text-[#2f3a31] placeholder-[#b7b197]/75 shadow-xs focus:ring-1 focus:ring-[#7b9076] focus:border-[#7b9076] outline-none transition-all font-sans ${isElderMode ? 'text-lg p-4 font-bold border-2 border-[#7b9076]' : 'text-sm'}`}
+                      />
+                    </div>
 
-                    {/* Speech / Keyboard / Handwriting controls grouped dynamically */}
-                    <div className="flex items-center gap-1.5">
-                      {isKeyboardMode && (
-                        <button
-                          type="button"
-                          onClick={startSpeechRecognition}
-                          className={`text-[10px] font-sans font-bold tracking-wider uppercase flex items-center gap-1 px-2.5 py-1 rounded-full transition-all cursor-pointer ${
-                            isListening
-                              ? 'bg-red-50 text-red-700 animate-pulse border border-red-200'
-                              : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-100 shadow-3xs'
-                          }`}
-                          title={t.speakBtnSupported}
-                        >
-                          <Mic className={`w-3 h-3 ${isListening ? 'animate-bounce' : ''}`} />
-                          <span>{isListening ? t.speakBtnListening : t.speakBtnStart}</span>
-                        </button>
-                      )}
+                    {/* Message Entry Block */}
+                    <div className="flex flex-col gap-2">
+                      <div className="flex items-center justify-between border-b border-[#d8c7a8]/40 pb-1.5">
+                        <label className={`font-sans font-bold uppercase tracking-wider text-[#5f6a60] flex items-center gap-1.5 transition-all ${isElderMode ? 'text-sm font-black text-[#2f3a31]' : 'text-xs'}`}>
+                          <MessageSquare className="w-3.5 h-3.5 text-[#7b9076]" />
+                          <span>{t.guestMessageLabel}</span>
+                        </label>
 
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const nextMod = !isKeyboardMode;
-                          setIsKeyboardMode(nextMod);
-                          setDraft(p => ({
-                            ...p,
-                            isHandwritten: !nextMod,
-                            handwritingDataUrl: null, // clear drawing on mode swap
-                            guestMessage: '',
-                          }));
-                          clearStatus();
-                        }}
-                        className="text-[10px] font-sans font-bold tracking-wider text-[#7b9076] uppercase flex items-center gap-1 px-2.5 py-1 bg-[#7b9076]/10 hover:bg-[#7b9076]/20 transition-colors rounded-full duration-150 cursor-pointer"
-                      >
-                        <span>{isKeyboardMode ? t.useHandwriting : t.useKeyboard}</span>
-                      </button>
+                        {/* Speech / Keyboard / Handwriting controls grouped dynamically */}
+                        <div className="flex items-center gap-1.5">
+                          {isKeyboardMode && (
+                            <button
+                              type="button"
+                              onClick={startSpeechRecognition}
+                              className={`text-[10px] font-sans font-bold tracking-wider uppercase flex items-center gap-1 px-2.5 py-1 rounded-full transition-all cursor-pointer ${
+                                isListening
+                                  ? 'bg-red-50 text-red-700 animate-pulse border border-red-200'
+                                  : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-100 shadow-3xs'
+                              }`}
+                              title={t.speakBtnSupported}
+                            >
+                              <Mic className={`w-3 h-3 ${isListening ? 'animate-bounce' : ''}`} />
+                              <span>{isListening ? t.speakBtnListening : t.speakBtnStart}</span>
+                            </button>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const nextMod = !isKeyboardMode;
+                              setIsKeyboardMode(nextMod);
+                              setDraft(p => ({
+                                ...p,
+                                isHandwritten: !nextMod,
+                                handwritingDataUrl: null, // clear drawing on mode swap
+                                guestMessage: '',
+                              }));
+                              clearStatus();
+                            }}
+                            className="text-[10px] font-sans font-bold tracking-wider text-[#7b9076] uppercase flex items-center gap-1 px-2.5 py-1 bg-[#7b9076]/10 hover:bg-[#7b9076]/20 transition-colors rounded-full duration-150 cursor-pointer"
+                          >
+                            <span>{isKeyboardMode ? t.useHandwriting : t.useKeyboard}</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Dynamic Writer Node */}
+                      <div className="mt-1 transition-all">
+                        {isKeyboardMode ? (
+                          /* Keyboard mode cursive textarea - beautifully adapted font readability for elders */
+                          <textarea
+                            value={draft.guestMessage}
+                            onChange={(e) => setDraft(p => ({ ...p, guestMessage: e.target.value }))}
+                            placeholder={lang === 'ta' ? "உதாரணம்: அன்புடைய ரூபா மற்றும் அரவிந்த், உங்களது இல்லற வாழ்க்கை இன்பமாகவும், அனைத்து மகிழ்ச்சிகளுடனும் நிலைத்திருக்க வாழ்த்துகிறேன்..." : "My dear Rupa & Aravind, wishing you a life filled with endless laughter, adventures, and sustainable growth. Here is to infinity together..."}
+                            maxLength={800}
+                            className={`w-full border border-[#b7b197] bg-white rounded-xl p-4 text-[#2f3a31] placeholder-[#b7b197]/60 shadow-xs focus:ring-1 focus:ring-[#7b9076] focus:border-[#7b9076] outline-none min-h-[220px] resize-none leading-relaxed transition-all ${isElderMode ? 'text-2xl font-sans font-bold border-2 border-[#7b9076]' : 'text-2xl font-script'}`}
+                          />
+                        ) : (
+                          /* Handwriting Draw Canvas */
+                          <HandwritingCanvas
+                            initialDataUrl={draft.handwritingDataUrl}
+                            onSave={(dataUrl) => setDraft(p => ({ ...p, handwritingDataUrl: dataUrl }))}
+                            lang={lang}
+                          />
+                        )}
+                      </div>
+                      <p className="text-[10px] font-sans text-neutral-500 italic mt-0.5">
+                        {t.selectPolicyNote}
+                      </p>
                     </div>
                   </div>
-
-                  {/* Dynamic Writer Node */}
-                  <div className="mt-1 transition-all">
-                    {isKeyboardMode ? (
-                      /* Keyboard mode cursive textarea - beautifully adapted font readability for elders */
-                      <textarea
-                        value={draft.guestMessage}
-                        onChange={(e) => setDraft(p => ({ ...p, guestMessage: e.target.value }))}
-                        placeholder={lang === 'ta' ? "உதாரணம்: அன்புடைய ரூபா மற்றும் அரவிந்த், உங்களது இல்லற வாழ்க்கை இன்பமாகவும், அனைத்து மகிழ்ச்சிகளுடனும் நிலைத்திருக்க வாழ்த்துகிறேன்..." : "My dear Rupa & Aravind, wishing you a life filled with endless laughter, adventures, and sustainable growth. Here is to infinity together..."}
-                        maxLength={800}
-                        className={`w-full border border-[#b7b197] bg-white rounded-xl p-4 text-[#2f3a31] placeholder-[#b7b197]/60 shadow-xs focus:ring-1 focus:ring-[#7b9076] focus:border-[#7b9076] outline-none min-h-[220px] resize-none leading-relaxed transition-all ${isElderMode ? 'text-2xl font-sans font-bold border-2 border-[#7b9076]' : 'text-2xl font-script'}`}
-                      />
-                    ) : (
-                      /* Handwriting Draw Canvas */
-                      <HandwritingCanvas
-                        initialDataUrl={draft.handwritingDataUrl}
-                        onSave={(dataUrl) => setDraft(p => ({ ...p, handwritingDataUrl: dataUrl }))}
-                      />
-                    )}
-                  </div>
-                  <p className="text-[10px] font-sans text-neutral-500 italic mt-0.5">
-                    {t.selectPolicyNote}
-                  </p>
                 </div>
 
                 {/* Honeypot anti-spam */}
@@ -705,62 +773,11 @@ export default function App() {
                     type="submit"
                     className={`flex-1 bg-linear-to-b from-[#859b80] to-[#6f866a] hover:from-[#7b9076] hover:to-[#5d7259] text-white font-bold tracking-wider uppercase rounded-full shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-1.5 scale-100 hover:scale-[1.01] active:scale-[0.99] cursor-pointer outline-none ${isElderMode ? 'py-4 px-6 text-sm' : 'py-3 text-xs'}`}
                   >
-                    <span>{t.nextTakeSelfie}</span>
+                    <span>{t.previewBtnSelector}</span>
                     <ChevronRight className="w-4 h-4" />
                   </button>
                 </div>
               </form>
-            </motion.div>
-          )}
-
-          {/* STEP 3: PHOTO CAPTURE WORKFLOW */}
-          {step === 'camera' && (
-            <motion.div
-              key="step-camera"
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -15 }}
-              transition={{ duration: 0.35 }}
-              className="w-full bg-[#f9f4e9]/92 backdrop-blur-xs border border-[#d8c7a8] rounded-3xl shadow-2xl p-6 sm:p-8 flex flex-col items-center"
-            >
-              <h2 className={`font-serif font-semibold text-[#2f3a31] text-center mb-1 transition-all ${isElderMode ? 'text-3xl' : 'text-2xl'}`}>
-                {t.selfieTitle}
-              </h2>
-              <p className={`font-serif italic text-[#5f6a60] text-center mb-6 transition-all ${isElderMode ? 'text-base font-bold' : 'text-xs'}`}>
-                {t.selfieSub}
-              </p>
-
-              <CameraCapture
-                initialPhotoUrl={draft.photoDataUrl}
-                onCapture={(blob, dataUrl) => setDraft(p => ({ ...p, photoBlob: blob, photoDataUrl: dataUrl }))}
-              />
-
-              <div className="flex gap-3 w-full max-w-[340px] mt-6 pt-4 border-t border-[#d8c7a8]/30">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setStep('letter');
-                    clearStatus();
-                  }}
-                  className={`flex-1 text-[#5f6a60] hover:text-[#2f3a31] border border-transparent rounded-full hover:bg-[#ede4d0]/60 transition-all cursor-pointer outline-none uppercase font-bold tracking-wider ${isElderMode ? 'py-4 text-sm' : 'py-3 text-xs'}`}
-                >
-                  {t.backToLetter}
-                </button>
-                
-                {draft.photoDataUrl && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setStep('preview');
-                      clearStatus();
-                    }}
-                    className={`flex-1 bg-[#7b9076] hover:bg-[#5d7259] text-white font-bold tracking-wider uppercase rounded-full shadow-md flex items-center justify-center gap-1 scale-100 active:scale-95 transition-all cursor-pointer outline-none ${isElderMode ? 'py-4 text-sm font-black' : 'py-3 text-xs'}`}
-                  >
-                    <span>{t.previewBtnSelector}</span>
-                    <ChevronRight className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
             </motion.div>
           )}
 
@@ -787,10 +804,10 @@ export default function App() {
                 isHandwritten={draft.isHandwritten}
                 handwritingDataUrl={draft.handwritingDataUrl}
                 photoDataUrl={draft.photoDataUrl}
+                voiceDataUrl={draft.voiceDataUrl}
                 onUpdateMessage={handleUpdateMessage}
                 onBackToCamera={() => {
-                  setStep('camera');
-                  setDraft(prev => ({ ...prev, photoBlob: null, photoDataUrl: null }));
+                  setStep('letter');
                 }}
                 lang={lang}
               />
@@ -800,12 +817,12 @@ export default function App() {
                   type="button"
                   disabled={isSubmitting}
                   onClick={() => {
-                    setStep('camera');
+                    setStep('letter');
                     clearStatus();
                   }}
                   className={`flex-1 text-[#5f6a60] hover:text-[#2f3a31] bg-[#ede4d0]/60 hover:bg-[#ede4d0] border border-[#d8c7a8]/40 transition-all rounded-full cursor-pointer outline-none uppercase font-bold tracking-wider ${isElderMode ? 'py-4 text-sm' : 'py-3 text-xs'}`}
                 >
-                  {t.retightenPhoto}
+                  {lang === 'ta' ? 'வாழ்த்துக்களைத் திருத்து' : 'Edit Letter'}
                 </button>
                 
                 <button

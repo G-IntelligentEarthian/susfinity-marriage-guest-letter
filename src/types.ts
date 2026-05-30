@@ -7,6 +7,8 @@ export interface LetterDraft {
   handwritingDataUrl: string | null; // stores Base64 drawing
   photoBlob: Blob | null;             // captured selfie raw blob
   photoDataUrl: string | null;        // preview URL of selfie
+  voiceBlob?: Blob | null;            // recorded voice blessing blob
+  voiceDataUrl?: string | null;       // preview URL of voice note
   timestamp: string;
 }
 
@@ -16,6 +18,7 @@ export interface GuestNote {
   message: string;
   is_handwritten: boolean;
   photo_url: string;
+  voice_url?: string; 
   created_at?: string;
   device_info?: string;
 }

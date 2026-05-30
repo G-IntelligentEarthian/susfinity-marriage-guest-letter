@@ -1,6 +1,6 @@
 {
   "name": "Susfinity Guest Letters",
   "description": "An elegant wedding wish guest book featuring interactive 3D envelopes, customized wax seals, handwritten options, and beautiful guest portraits.",
-  "requestFramePermissions": ["camera"],
+  "requestFramePermissions": ["camera", "microphone"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

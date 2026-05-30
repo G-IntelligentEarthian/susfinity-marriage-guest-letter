@@ -4,6 +4,7 @@ import { Eraser, RotateCcw, Palette } from 'lucide-react';
 interface HandwritingCanvasProps {
   onSave: (dataUrl: string | null) => void;
   initialDataUrl: string | null;
+  lang?: 'en' | 'ta';
 }
 
 const BRUSH_COLORS = [
@@ -16,12 +17,28 @@ const BRUSH_COLORS = [
 export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
   onSave,
   initialDataUrl,
+  lang = 'en',
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [brushColor, setBrushColor] = useState('#2f3a31');
   const [isEmpty, setIsEmpty] = useState(true);
+
+  const t = {
+    en: {
+      ink: "Ink:",
+      clearInk: "Clear Ink",
+      newlyweds: "Dear newlyweds,",
+      instructions: "Sign or write with your finger/stylus here..."
+    },
+    ta: {
+      ink: "மை:",
+      clearInk: "அழிக்க",
+      newlyweds: "அன்புள்ள மணமக்களுக்கு,",
+      instructions: "உங்கள் விரலால் அல்லது ஸ்டைலஸால் இங்கு எழுதவும்..."
+    }
+  }[lang];
 
   // Initialize canvas with correct DPI scale
   useEffect(() => {
@@ -193,7 +210,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
         <div className="flex items-center gap-2">
           <span className="text-xs text-[#5f6a60] font-sans flex items-center gap-1 font-semibold">
             <Palette className="w-3.5 h-3.5 text-[#7b9076]" />
-            Ink:
+            {t.ink}
           </span>
           <div className="flex items-center gap-1.5">
             {BRUSH_COLORS.map((col) => (
@@ -221,7 +238,7 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
           className="flex items-center gap-1.5 px-3 py-1 text-xs font-sans font-medium text-[#5f6a60] hover:text-[#2f3a31] disabled:opacity-40 disabled:cursor-not-allowed border border-[#d8c7a8]/60 bg-white/70 hover:bg-white rounded-full transition-colors cursor-pointer"
         >
           <RotateCcw className="w-3 h-3" />
-          <span>Clear Ink</span>
+          <span>{t.clearInk}</span>
         </button>
       </div>
 
@@ -231,8 +248,8 @@ export const HandwritingCanvas: React.FC<HandwritingCanvasProps> = ({
         {/* Decorative Grid Guide background lines */}
         {isEmpty && (
           <div className="absolute inset-0 flex flex-col justify-center items-center gap-1.5 pointer-events-none text-center px-4">
-            <span className="font-serif italic text-[#7b9076] text-lg">Dear newlyweds,</span>
-            <span className="font-sans text-xs text-[#5f6a60] opacity-75">Sign or write with your finger/stylus here...</span>
+            <span className="font-serif italic text-[#7b9076] text-lg">{t.newlyweds}</span>
+            <span className="font-sans text-xs text-[#5f6a60] opacity-75">{t.instructions}</span>
           </div>
         )}
 

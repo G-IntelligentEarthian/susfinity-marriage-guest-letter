@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { Edit2, Save, X, FileText, CheckCircle2 } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Edit2, Save, X, FileText, CheckCircle2, Play, Square, Volume2, Trash2 } from 'lucide-react';
+import { motion } from 'motion/react';
 
 interface SubmissionPreviewProps {
   guestName: string;
@@ -7,8 +8,10 @@ interface SubmissionPreviewProps {
   isHandwritten: boolean;
   handwritingDataUrl: string | null;
   photoDataUrl: string | null;
+  voiceDataUrl?: string | null;
   onUpdateMessage: (newMessage: string) => void;
   onBackToCamera?: () => void;
+  onDeleteVoice?: () => void;
   lang?: 'en' | 'ta';
 }
 
@@ -18,15 +21,21 @@ export const SubmissionPreview: React.FC<SubmissionPreviewProps> = ({
   isHandwritten,
   handwritingDataUrl,
   photoDataUrl,
+  voiceDataUrl = null,
   onUpdateMessage,
   onBackToCamera,
+  onDeleteVoice,
   lang = 'en',
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editedText, setEditedText] = useState(isHandwritten ? '' : guestMessage);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [editError, setEditError] = useState('');
+  const audioPlaybackRef = useRef<HTMLAudioElement | null>(null);
 
   const startEdit = () => {
     setIsEditing(true);
+    setEditError('');
     if (isHandwritten) {
       setEditedText(''); // Clear if handwriting so they can replace with typed text
     } else {
@@ -37,17 +46,48 @@ export const SubmissionPreview: React.FC<SubmissionPreviewProps> = ({
   const saveEdit = () => {
     const trimmed = editedText.trim();
     if (trimmed.length < 8) {
-      alert(lang === 'ta' ? 'வாழ்த்துக்கள் குறைந்தது 8 எழுத்துக்கள் கொண்டிருக்க வேண்டும்.' : 'Wishes must be at least 8 characters long.');
+      setEditError(lang === 'ta' ? 'வாழ்த்துக்கள் குறைந்தது 8 எழுத்துக்கள் கொண்டிருக்க வேண்டும்.' : 'Wishes must be at least 8 characters long.');
       return;
     }
     onUpdateMessage(trimmed);
     setIsEditing(false);
+    setEditError('');
   };
 
   const cancelEdit = () => {
     setIsEditing(false);
+    setEditError('');
     setEditedText(isHandwritten ? '' : guestMessage);
   };
+
+  // Playback system for preview
+  const toggleVoicePlayback = () => {
+    if (!voiceDataUrl) return;
+    if (isPlaying) {
+      audioPlaybackRef.current?.pause();
+      setIsPlaying(false);
+    } else {
+      if (!audioPlaybackRef.current) {
+        audioPlaybackRef.current = new Audio(voiceDataUrl);
+        audioPlaybackRef.current.onended = () => setIsPlaying(false);
+      } else {
+        audioPlaybackRef.current.src = voiceDataUrl;
+      }
+      setIsPlaying(true);
+      audioPlaybackRef.current.play().catch(e => {
+        console.warn('Playback error inside preview:', e);
+        setIsPlaying(false);
+      });
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (audioPlaybackRef.current) {
+        audioPlaybackRef.current.pause();
+      }
+    };
+  }, []);
 
   const tDear = lang === 'ta' ? 'அன்புள்ள ரூபா & அரவிந்த் அவர்களுக்கு,' : 'Dear Rupa & Aravind,';
   const tHandwritten = lang === 'ta' ? 'கையெழுத்து' : 'Handwritten';
@@ -59,11 +99,14 @@ export const SubmissionPreview: React.FC<SubmissionPreviewProps> = ({
   const tEditOpt = lang === 'ta' ? 'வாழ்த்தைத் திருத்து' : 'EDIT TEXT';
   const tSuccessBound = lang === 'ta' ? 'புகைப்படம் மடலுடன் இணைக்கப்பட்டது' : 'Portrait bound to letter successfully';
   const tRetakePhoto = lang === 'ta' ? 'புகைப்படத்தை மாற்று' : 'RETAKE PHOTO';
+  const tVoiceHeader = lang === 'ta' ? 'உங்களது ஆடியோ வாழ்த்து' : 'Recorded Voice Blessing';
+  const tPlay = lang === 'ta' ? 'வாழ்த்தைக் கேள்' : 'Play Blessing';
+  const tStop = lang === 'ta' ? 'நிறுத்து' : 'Stop Blessing';
 
   return (
     <div className="flex flex-col gap-6 w-full max-w-[480px]">
       
-      {/* 1. MASTER COLLAGE (Letter Page & Photo Pinboard) */}
+      {/* 1. MASTER COLLAGE (Letter Page, Photo Frame, and Audio Ribbon) */}
       <div className="flex flex-col gap-4 bg-white/40 p-4 rounded-3xl border border-[#d8c7a8]/40 shadow-inner">
         
         {/* Wish Letter Segment */}
@@ -96,6 +139,11 @@ export const SubmissionPreview: React.FC<SubmissionPreviewProps> = ({
                   maxLength={600}
                   className="w-full min-h-[100px] border border-[#b7b197] rounded-xl p-3 bg-white text-base leading-relaxed font-script font-medium text-[#2f3a31] outline-none shadow-xs focus:ring-1 focus:ring-[#7b9076]"
                 />
+                {editError && (
+                  <p className="text-[11px] font-sans font-semibold text-rose-700 bg-rose-50 border border-rose-200/50 px-2.5 py-1.5 rounded-lg">
+                    {editError}
+                  </p>
+                )}
                 <div className="flex items-center justify-end gap-2">
                   <button
                     onClick={cancelEdit}
@@ -155,7 +203,57 @@ export const SubmissionPreview: React.FC<SubmissionPreviewProps> = ({
           </div>
         </div>
 
-        {/* Guest Photo segment */}
+        {/* 2. AUDIO RECORDER BLESSING RIBBON (Only if recorded) */}
+        {voiceDataUrl && (
+          <div className="w-full bg-[#f4ebd9]/60 border border-[#d8c7a8]/50 rounded-2xl p-3.5 flex items-center justify-between shadow-xs">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-[#7b9076]/20 text-[#7b9076] rounded-full">
+                <Volume2 className="w-4 h-4 animate-bounce" />
+              </div>
+              <div className="flex flex-col text-left">
+                <span className="text-[10px] font-sans font-extrabold uppercase text-[#2f3a31] tracking-wider">{tVoiceHeader}</span>
+                <span className="text-[9px] text-[#5f6a60] italic">
+                  {lang === 'ta' ? 'மணமக்கள் கேட்க தயார்' : 'Ready for the couple to play'}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={toggleVoicePlayback}
+                className={`py-1.5 px-4 rounded-full text-[10px] font-sans font-bold uppercase tracking-wider flex items-center gap-1 duration-150 cursor-pointer text-white ${
+                  isPlaying ? 'bg-[#b87d5f]' : 'bg-[#7b9076] hover:bg-[#5d7259]'
+                }`}
+              >
+                {isPlaying ? (
+                  <>
+                    <Square className="w-3 h-3 fill-current" />
+                    <span>{tStop}</span>
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-3 h-3 fill-current" />
+                    <span>{tPlay}</span>
+                  </>
+                )}
+              </button>
+
+              {onDeleteVoice && (
+                <button
+                  type="button"
+                  onClick={onDeleteVoice}
+                  className="p-1.5 text-neutral-400 hover:text-red-500 rounded-full hover:bg-neutral-100 transition-all cursor-pointer"
+                  title={lang === 'ta' ? 'அழிக்க' : 'Delete Voice Note'}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* 3. Guest Photo segment */}
         {photoDataUrl && (
           <div className="relative group rounded-2xl overflow-hidden aspect-4/3 border border-[#cfbba0] shadow-md bg-neutral-900">
             <img
