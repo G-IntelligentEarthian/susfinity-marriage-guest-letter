@@ -11,7 +11,11 @@ import {
   AlertCircle,
   Database,
   Lock,
-  MessageSquare
+  MessageSquare,
+  Mic,
+  MicOff,
+  Type,
+  Languages
 } from 'lucide-react';
 
 import { Step, LetterDraft, GuestNote } from './types';
@@ -23,17 +27,101 @@ import { SubmissionPreview } from './components/SubmissionPreview';
 import { getSupabase, localDb } from './supabaseClient';
 import { Confetti } from './components/Confetti';
 
-// Safe UUID helper for sandboxed contexts where crypto.randomUUID is absent (fixes standard iframe browser block)
-function generateUUID(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
+// Translatability & Senior Localization Dictionary
+type Language = 'en' | 'ta';
+
+const TRANSLATIONS = {
+  en: {
+    title: "Susfinity Guest Letters",
+    subtitle: "A sustainable digital guestbook for Rupa & Aravind",
+    tapToOpen: "TAP TO OPEN",
+    envelopeSub: "Let your words of celebration be packed in molten sealing wax.",
+    writeWishesTitle: "Write Your Wishes",
+    pourLove: "Pour your love onto pristine organic parchment paper",
+    guestNameLabel: "Your Name (Optional)",
+    guestNamePlaceholder: "Enter your name or family title...",
+    guestMessageLabel: "Your Message",
+    useHandwriting: "USE HANDWRITING",
+    useKeyboard: "USE KEYBOARD",
+    speakBtnStart: "Speak Wish",
+    speakBtnListening: "Listening...",
+    speakBtnSupported: "Speak your message clearly. Recording automatically fills text below.",
+    backReseal: "Muted Sealing",
+    resealLetter: "Reseal Letter",
+    nextTakeSelfie: "Next: Take Selfie",
+    selfieTitle: "Capture Your Smile",
+    selfieSub: "Bind your portrait to seal your blessing forever",
+    backToLetter: "Back to Letter",
+    previewBtnSelector: "PREVIEW LETTER",
+    previewTitle: "Your Wishing Letter",
+    previewSub: "Review your message and photo before melting the wax seal",
+    retightenPhoto: "RETIGHTEN PHOTO",
+    submitAndSeal: "SUBMIT & SEAL",
+    sealingLetter: "SEALING LETTER...",
+    syncWishes: "Syncing wishes to database...",
+    sealedLocally: "✔ Sealed locally inside your browser cache!",
+    sentSuccessfully: "✔ Wish sent successfully via Supabase!",
+    writeAnotherText: "WRITE ANOTHER LETTER",
+    thankYouTitle: "Thank You!",
+    dear: "Dear",
+    thankYouMsg: "Your personalized letter has been successfully sealed and added to the wishing chest. Rupa and Aravind will treasure your thoughtful words and portrait forever.",
+    wishesShared: "Wishes Shared So Far",
+    localStorageDisclaimer: "Local Storage Fallback Ready",
+    diagnosticBtn: "Database Connection Diagnostic",
+    micNotSupported: "Speech transcription not supported in this browser. Try Chrome/Safari.",
+    listeningPleaseSpeak: "Listening... Speak clearly into microphone now.",
+    stoppedListening: "Stopped capturing voice input.",
+    seniorToggle: "Senior-Friendly A+",
+    seniorSubtitle: "Extra large high-contrast text for elders",
+    minCharactersError: "Please expand your wishes to at least 8 characters.",
+    selectPolicyNote: "Requires at least 8 characters (max 800)"
+  },
+  ta: {
+    title: "சஸ்பினிட்டி வாழ்த்து மடல்",
+    subtitle: "ரூபா & அரவிந்த் ஜோடிக்கான ஒரு நிலையான டிஜிட்டல் வாழ்த்துப் பெட்டகம்",
+    tapToOpen: "திறக்க தட்டவும்",
+    envelopeSub: "உங்கள் வாழ்த்துக்கள் உருகிய மெழுகு முத்திரையில் பொதியப்படட்டும்.",
+    writeWishesTitle: "உங்கள் வாழ்த்துக்களை எழுதுங்கள்",
+    pourLove: "உங்களது அன்பை அழகான பாராளுமன்ற மடல் தாளில் வடியுங்கள்",
+    guestNameLabel: "உங்கள் பெயர் (விருப்பத்திற்குரியது)",
+    guestNamePlaceholder: "உங்கள் பெயர் அல்லது குடும்பப் பெயரை உள்ளிடவும்...",
+    guestMessageLabel: "உங்கள் வாழ்த்துச் செய்தி",
+    useHandwriting: "கையெழுத்து",
+    useKeyboard: "விசைப்பலகை",
+    speakBtnStart: "பேசி வாழ்த்துக",
+    speakBtnListening: "கேட்கிறது...",
+    speakBtnSupported: "விசைப்பலகைக்குப் பதில் தமிழிலேயே பேசி வாழ்த்துங்கள்!",
+    backReseal: "வாழ்த்து மடலை மூடு",
+    resealLetter: "வாழ்த்து மடலை மூடு",
+    nextTakeSelfie: "அடுத்து: புகைப்படம்",
+    selfieTitle: "உங்களது புன்னகை",
+    selfieSub: "உங்களது ஆசீர்வாதத்தை என்றும் நிலைநிறுத்த புகைப்படத்தை இணைத்திடுங்கள்",
+    backToLetter: "வாழ்த்து எழுத",
+    previewBtnSelector: "வாழ்த்து மடலைப் பார்",
+    previewTitle: "உங்களது வாழ்த்து மடல்",
+    previewSub: "முத்திரை இடுவதற்குத் தயாராக உள்ள உங்கள் வாழ்த்து மற்றும் புகைப்படம்",
+    retightenPhoto: "புகைப்படத்தை மாற்று",
+    submitAndSeal: "சமர்ப்பித்து முத்திரையிடு",
+    sealingLetter: "மெழுகு முத்திரையிடப்படுகிறது...",
+    syncWishes: "விவரங்கள் தரவுத்தளத்துடன் இணைக்கப்படுகிறது...",
+    sealedLocally: "✔ உலாவி சேமிப்பில் வெற்றிகரமாக சீல் செய்யப்பட்டது!",
+    sentSuccessfully: "✔ வாழ்த்துக்கள் சமர்ப்பிக்கப்பட்டன!",
+    writeAnotherText: "மற்றொரு வாழ்த்து எழுத",
+    thankYouTitle: "மிக்க நன்றி!",
+    dear: "அன்புள்ள",
+    thankYouMsg: "உங்களது தனிப்பயனாக்கப்பட்ட வாழ்த்து மடல் வெற்றிகரமாக சீல் செய்யப்பட்டு, மெழுகு முத்திரை வாழ்த்துப் பெட்டகத்தில் சேர்க்கப்பட்டது. ஜோடி ரூபாவும் அரவிந்தும் உங்களது சொற்களையும் புகைப்படத்தையும் என்றென்றும் மதிக்கப் போகிறார்கள்.",
+    wishesShared: "இதுவரை பகிரப்பட்ட வாழ்த்துக்கள்",
+    localStorageDisclaimer: "உள்ளூர் உலாவி சேமிப்பு தயாராக உள்ளது",
+    diagnosticBtn: "தரவுத்தள இணைப்பு கண்டறிதல்",
+    micNotSupported: "உங்கள் லேப்டாப்/கைபேசியில் தமிழ் பேச்சு வடிவம் ஆதரிக்கப்படவில்லை.",
+    listeningPleaseSpeak: "கேட்கிறது... மைக்ரோபோன் அருகில் தெளிவாகப் பேசுங்கள்.",
+    stoppedListening: "பேச்சு வாழ்த்து முடிந்தது.",
+    seniorToggle: "பெரிய எழுத்துக்கள் A+",
+    seniorSubtitle: "முதியோர்களுக்கான கூடுதல் எழுத்து அளவுகள்",
+    minCharactersError: "உங்கள் வாழ்த்துகளை குறைந்தது 8 எழுத்துக்களாக விரிவுபடுத்தவும்.",
+    selectPolicyNote: "குறைந்தது 8 எழுத்துக்கள் தேவை (அதிகபட்சம் 800)"
   }
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    const v = c === 'x' ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
-}
+};
 
 // Convert drawn handwritten canvas Base64 dataURL back into a raw blob for Supabase storage uploading
 function dataUrlToBlob(dataUrl: string): Blob {
@@ -48,12 +136,31 @@ function dataUrlToBlob(dataUrl: string): Blob {
   return new Blob([u8arr], { type: mime });
 }
 
+// Safe UUID helper for sandboxed contexts where crypto.randomUUID is absent (fixes standard iframe browser block)
+function generateUUID(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 export default function App() {
   const [step, setStep] = useState<Step>('envelope');
   const [envelopeOpen, setEnvelopeOpen] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isKeyboardMode, setIsKeyboardMode] = useState(false);
+
+  // Inclusive and localization states
+  const [lang, setLang] = useState<Language>('en');
+  const [isElderMode, setIsElderMode] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+
+  const t = TRANSLATIONS[lang];
 
   // Core wishing draft data state
   const [isDiagnosticRunning, setIsDiagnosticRunning] = useState(false);
@@ -64,12 +171,19 @@ export default function App() {
       const supabaseConnector = getSupabase();
       let dbCount = 0;
       if (supabaseConnector) {
-        const { count, error } = await supabaseConnector
+        // Query exact count of all rows resiliently
+        const { count, data, error } = await supabaseConnector
           .from('guest_notes')
-          .select('id', { count: 'exact', head: true });
+          .select('*', { count: 'exact' });
         
-        if (!error && count !== null) {
-          dbCount = count;
+        if (!error) {
+          if (count !== null) {
+            dbCount = count;
+          } else if (data) {
+            dbCount = data.length;
+          }
+        } else {
+          console.error('Fetch count error:', error);
         }
       }
       const localCount = localDb.getNotes().length;
@@ -96,7 +210,7 @@ export default function App() {
       
       const { count, data, error } = await supabaseConnector
         .from('guest_notes')
-        .select('id', { count: 'exact' });
+        .select('*', { count: 'exact' });
         
       if (error) {
         throw error;
@@ -105,9 +219,9 @@ export default function App() {
       const foundCount = count !== null ? count : (data?.length ?? 0);
       
       if (foundCount === 0) {
-        setStatusMessage(`✔ Connected! Count is 0 (Note: If DB actually has entries, please verify RLS SELECT policy is enabled on guest_notes in Supabase)`);
+        setStatusMessage(`✔ Reachable count: 0 (If your DB contains entries, you must enable PUBLIC SELECT RLS in Supabase: "CREATE POLICY \"read_public\" ON public.guest_notes FOR SELECT USING (true);")`);
       } else {
-        setStatusMessage(`✔ Connected! Reachable count in DB is ${foundCount} total entries.`);
+        setStatusMessage(`✔ Reachable count in DB is ${foundCount} total entries successfully!`);
       }
       
       // Sync local state
@@ -115,7 +229,7 @@ export default function App() {
       setTotalWishesCount(Math.max(foundCount, localCount));
     } catch (err: any) {
       console.error('Diagnostic check failed:', err);
-      setStatusMessage(`❌ Reachable check failed: ${err.message || 'Unknown network error'}`);
+      setStatusMessage(`❌ Check failed: ${err.message || 'Unknown network error'}`);
     } finally {
       setIsDiagnosticRunning(false);
     }
@@ -141,6 +255,59 @@ export default function App() {
   };
 
   const clearStatus = () => setStatusMessage('');
+
+  // Speech-to-Text Transcription Service for Elder dictation
+  const startSpeechRecognition = () => {
+    // @ts-ignore
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setStatusMessage(TRANSLATIONS[lang].micNotSupported);
+      return;
+    }
+
+    try {
+      const rec = new SpeechRecognition();
+      rec.continuous = false;
+      rec.interimResults = false;
+      rec.lang = lang === 'ta' ? 'ta-IN' : 'en-US';
+
+      rec.onstart = () => {
+        setIsListening(true);
+        setStatusMessage(TRANSLATIONS[lang].listeningPleaseSpeak);
+      };
+
+      rec.onerror = (event: any) => {
+        console.error('Speech recognition error:', event.error);
+        setIsListening(false);
+        setStatusMessage(`Mic error: ${event.error || 'Permission Denied'}`);
+      };
+
+      rec.onend = () => {
+        setIsListening(false);
+      };
+
+      rec.onresult = (event: any) => {
+        const transcript = event.results[0][0].transcript;
+        if (transcript) {
+          setDraft(p => {
+            const currentMessage = p.guestMessage ? p.guestMessage + ' ' : '';
+            return {
+              ...p,
+              guestMessage: currentMessage + transcript,
+              isHandwritten: false
+            };
+          });
+          setIsKeyboardMode(true);
+          setStatusMessage(`✔ Voice typed: "${transcript}"`);
+        }
+      };
+
+      rec.start();
+    } catch (e: any) {
+      console.error(e);
+      setStatusMessage(`Failed to start mic: ${e.message}`);
+    }
+  };
 
   // Form submission and envelope packing animation sequence
   const handleSubmitWishes = async () => {
@@ -310,9 +477,60 @@ export default function App() {
   return (
     <main className="custom-grid-bg min-h-screen w-full flex flex-col justify-between py-6 px-4 sm:p-8">
       
-      {/* 1. TOP HEADER BRANDING */}
-      <header className="w-full max-w-xl mx-auto flex flex-col items-center text-center mt-2 mb-4 select-none">
+      {/* 1. TOP HEADER BRANDING & DUAL LANGUAGE ACCESSIBILITY BAR */}
+      <header className="w-full max-w-xl mx-auto flex flex-col items-center mt-2 mb-2 select-none">
         
+        {/* Languages Switcher & Senior Accessibility Controls Panel */}
+        <div className="w-full flex items-center justify-between px-2 mb-5 gap-3 shrink-0">
+          
+          {/* Beautifully balanced pill-shaped Language Selector */}
+          <div className="flex bg-[#ede4d0]/65 p-1 rounded-full border border-[#d8c7a8]/40 shadow-2xs">
+            <button
+              type="button"
+              onClick={() => {
+                setLang('en');
+                clearStatus();
+              }}
+              className={`px-3 py-1 text-[10px] font-bold tracking-widest uppercase rounded-full transition-all cursor-pointer ${
+                lang === 'en'
+                  ? 'bg-[#7b9076] text-white shadow-xs'
+                  : 'text-[#5f6a60] hover:text-[#2f3a31]'
+              }`}
+            >
+              English
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setLang('ta');
+                clearStatus();
+              }}
+              className={`px-3 py-1 text-[10px] font-bold tracking-widest uppercase rounded-full transition-all cursor-pointer ${
+                lang === 'ta'
+                  ? 'bg-[#7b9076] text-white shadow-xs'
+                  : 'text-[#5f6a60] hover:text-[#2f3a31]'
+              }`}
+            >
+              தமிழ்
+            </button>
+          </div>
+
+          {/* Bold visual Elder-Friendly sizing switcher */}
+          <button
+            type="button"
+            onClick={() => setIsElderMode(prev => !prev)}
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border text-[10px] font-extrabold tracking-widest uppercase transition-all cursor-pointer shadow-2xs ${
+              isElderMode
+                ? 'bg-[#2f3a31] text-white border-[#2f3a31] scale-102 font-black'
+                : 'bg-[#ede4d0]/50 text-[#5f6a60] border-[#d8c7a8]/30 hover:bg-[#ede4d0]/90'
+            }`}
+            title={t.seniorToggle}
+          >
+            <Type className="w-3.5 h-3.5" />
+            <span>{t.seniorToggle}</span>
+          </button>
+        </div>
+
         {/* Intricate floating floral logo branding */}
         <motion.div 
           onClick={handleReset}
@@ -321,14 +539,14 @@ export default function App() {
           whileTap={{ scale: 0.95 }}
           transition={{ type: 'spring', stiffness: 300, damping: 20 }}
         >
-          <SusfinityLogo variant="color" size={90} className="filter drop-shadow-[0_4px_8px_rgba(123,144,118,0.18)]" />
+          <SusfinityLogo variant="color" size={isElderMode ? 100 : 90} className="filter drop-shadow-[0_4px_8px_rgba(123,144,118,0.18)]" />
         </motion.div>
 
-        <h1 className="font-serif font-semibold text-[#2f3a31] text-3xl md:text-4xl mt-3 tracking-wide">
-          Susfinity Guest Letters
+        <h1 className={`font-serif font-semibold text-[#2f3a31] mt-3 tracking-wide transition-all ${isElderMode ? 'text-4xl md:text-5xl font-bold' : 'text-3xl md:text-4xl'}`}>
+          {t.title}
         </h1>
-        <p className="font-serif italic text-sm text-[#5f6a60] mt-1 pr-1 pl-1">
-          A sustainable digital guestbook for Rupa &amp; Aravind
+        <p className={`font-serif italic text-[#5f6a60] mt-1 pr-1 pl-1 transition-all ${isElderMode ? 'text-lg font-bold' : 'text-sm'}`}>
+          {t.subtitle}
         </p>
       </header>
 
@@ -347,8 +565,8 @@ export default function App() {
               className="flex flex-col gap-1 w-full"
             >
               <div className="text-center mb-4">
-                <p className="font-sans text-xs font-bold tracking-widest text-[#7b9076] uppercase">TAP TO OPEN</p>
-                <p className="font-serif italic text-[#5f6a60] text-sm mt-0.5">Let your words of celebration be packed in molten sealing wax.</p>
+                <p className={`font-sans font-bold tracking-widest text-[#7b9076] uppercase transition-all ${isElderMode ? 'text-sm font-black' : 'text-xs'}`}>{t.tapToOpen}</p>
+                <p className={`font-serif italic text-[#5f6a60] mt-0.5 transition-all ${isElderMode ? 'text-base font-bold' : 'text-sm'}`}>{t.envelopeSub}</p>
               </div>
 
               {/* Enhanced 3D Envelope */}
@@ -372,19 +590,19 @@ export default function App() {
               transition={{ duration: 0.35 }}
               className="w-full bg-[#f9f4e9]/92 backdrop-blur-xs border border-[#d8c7a8] rounded-3xl shadow-2xl p-6 sm:p-8"
             >
-              <h2 className="font-serif font-semibold text-[#2f3a31] text-2xl text-center mb-1">
-                Write Your Wishes
+              <h2 className={`font-serif font-semibold text-[#2f3a31] text-center mb-1 transition-all ${isElderMode ? 'text-3xl' : 'text-2xl'}`}>
+                {t.writeWishesTitle}
               </h2>
-              <p className="font-serif italic text-xs text-[#5f6a60] text-center mb-6">
-                Pour your love onto pristine organic parchment paper
+              <p className={`font-serif italic text-[#5f6a60] text-center mb-6 transition-all ${isElderMode ? 'text-base font-bold' : 'text-xs'}`}>
+                {t.pourLove}
               </p>
 
               <form onSubmit={handleNextFromLetter} className="flex flex-col gap-5">
                 
                 {/* Guest Name input */}
                 <div className="flex flex-col gap-1.5">
-                  <label htmlFor="guest-name" className="text-xs font-sans font-bold uppercase tracking-wider text-[#5f6a60]">
-                    Your Name (Optional)
+                  <label htmlFor="guest-name" className={`font-sans font-bold uppercase tracking-wider text-[#5f6a60] transition-all ${isElderMode ? 'text-sm font-black text-[#2f3a31]' : 'text-xs'}`}>
+                    {t.guestNameLabel}
                   </label>
                   <input
                     id="guest-name"
@@ -392,49 +610,67 @@ export default function App() {
                     maxLength={80}
                     value={draft.guestName}
                     onChange={(e) => setDraft(p => ({ ...p, guestName: e.target.value }))}
-                    placeholder="Enter your name or family title..."
-                    className="w-full border border-[#b7b197] bg-white rounded-xl px-4 py-3 text-sm text-[#2f3a31] placeholder-[#b7b197]/75 shadow-xs focus:ring-1 focus:ring-[#7b9076] focus:border-[#7b9076] outline-none transition-all font-sans"
+                    placeholder={t.guestNamePlaceholder}
+                    className={`w-full border border-[#b7b197] bg-white rounded-xl px-4 py-3 text-[#2f3a31] placeholder-[#b7b197]/75 shadow-xs focus:ring-1 focus:ring-[#7b9076] focus:border-[#7b9076] outline-none transition-all font-sans ${isElderMode ? 'text-lg p-4 font-bold border-2 border-[#7b9076]' : 'text-sm'}`}
                   />
                 </div>
 
                 {/* Message Entry Block */}
                 <div className="flex flex-col gap-2">
                   <div className="flex items-center justify-between border-b border-[#d8c7a8]/40 pb-1.5">
-                    <label className="text-xs font-sans font-bold uppercase tracking-wider text-[#5f6a60] flex items-center gap-1.5">
+                    <label className={`font-sans font-bold uppercase tracking-wider text-[#5f6a60] flex items-center gap-1.5 transition-all ${isElderMode ? 'text-sm font-black text-[#2f3a31]' : 'text-xs'}`}>
                       <MessageSquare className="w-3.5 h-3.5 text-[#7b9076]" />
-                      <span>Your Message</span>
+                      <span>{t.guestMessageLabel}</span>
                     </label>
 
-                    {/* Mode toggler layout */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const nextMod = !isKeyboardMode;
-                        setIsKeyboardMode(nextMod);
-                        setDraft(p => ({
-                          ...p,
-                          isHandwritten: !nextMod,
-                          handwritingDataUrl: null, // clear drawing on mode swap
-                          guestMessage: '',
-                        }));
-                        clearStatus();
-                      }}
-                      className="text-[10px] font-sans font-bold tracking-wider text-[#7b9076] uppercase flex items-center gap-1 px-2.5 py-1 bg-[#7b9076]/10 hover:bg-[#7b9076]/20 transition-colors rounded-full duration-150 cursor-pointer"
-                    >
-                      <span>USE {isKeyboardMode ? 'HANDWRITING' : 'KEYBOARD'}</span>
-                    </button>
+                    {/* Speech / Keyboard / Handwriting controls grouped dynamically */}
+                    <div className="flex items-center gap-1.5">
+                      {isKeyboardMode && (
+                        <button
+                          type="button"
+                          onClick={startSpeechRecognition}
+                          className={`text-[10px] font-sans font-bold tracking-wider uppercase flex items-center gap-1 px-2.5 py-1 rounded-full transition-all cursor-pointer ${
+                            isListening
+                              ? 'bg-red-50 text-red-700 animate-pulse border border-red-200'
+                              : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-100 shadow-3xs'
+                          }`}
+                          title={t.speakBtnSupported}
+                        >
+                          <Mic className={`w-3 h-3 ${isListening ? 'animate-bounce' : ''}`} />
+                          <span>{isListening ? t.speakBtnListening : t.speakBtnStart}</span>
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const nextMod = !isKeyboardMode;
+                          setIsKeyboardMode(nextMod);
+                          setDraft(p => ({
+                            ...p,
+                            isHandwritten: !nextMod,
+                            handwritingDataUrl: null, // clear drawing on mode swap
+                            guestMessage: '',
+                          }));
+                          clearStatus();
+                        }}
+                        className="text-[10px] font-sans font-bold tracking-wider text-[#7b9076] uppercase flex items-center gap-1 px-2.5 py-1 bg-[#7b9076]/10 hover:bg-[#7b9076]/20 transition-colors rounded-full duration-150 cursor-pointer"
+                      >
+                        <span>{isKeyboardMode ? t.useHandwriting : t.useKeyboard}</span>
+                      </button>
+                    </div>
                   </div>
 
                   {/* Dynamic Writer Node */}
                   <div className="mt-1 transition-all">
                     {isKeyboardMode ? (
-                      /* Keyboard mode cursive textarea */
+                      /* Keyboard mode cursive textarea - beautifully adapted font readability for elders */
                       <textarea
                         value={draft.guestMessage}
                         onChange={(e) => setDraft(p => ({ ...p, guestMessage: e.target.value }))}
-                        placeholder="My dear Rupa & Aravind, wishing you a life filled with endless laughter, adventures, and sustainable growth. Here is to infinity together..."
+                        placeholder={lang === 'ta' ? "உதாரணம்: அன்புடைய ரூபா மற்றும் அரவிந்த், உங்களது இல்லற வாழ்க்கை இன்பமாகவும், அனைத்து மகிழ்ச்சிகளுடனும் நிலைத்திருக்க வாழ்த்துகிறேன்..." : "My dear Rupa & Aravind, wishing you a life filled with endless laughter, adventures, and sustainable growth. Here is to infinity together..."}
                         maxLength={800}
-                        className="w-full border border-[#b7b197] bg-white rounded-xl p-4 text-2xl font-script text-[#2f3a31] placeholder-[#b7b197]/60 shadow-xs focus:ring-1 focus:ring-[#7b9076] focus:border-[#7b9076] outline-none min-h-[220px] resize-none leading-relaxed transition-all"
+                        className={`w-full border border-[#b7b197] bg-white rounded-xl p-4 text-[#2f3a31] placeholder-[#b7b197]/60 shadow-xs focus:ring-1 focus:ring-[#7b9076] focus:border-[#7b9076] outline-none min-h-[220px] resize-none leading-relaxed transition-all ${isElderMode ? 'text-2xl font-sans font-bold border-2 border-[#7b9076]' : 'text-2xl font-script'}`}
                       />
                     ) : (
                       /* Handwriting Draw Canvas */
@@ -444,6 +680,9 @@ export default function App() {
                       />
                     )}
                   </div>
+                  <p className="text-[10px] font-sans text-neutral-500 italic mt-0.5">
+                    {t.selectPolicyNote}
+                  </p>
                 </div>
 
                 {/* Honeypot anti-spam */}
@@ -457,16 +696,16 @@ export default function App() {
                       setEnvelopeOpen(true);
                       clearStatus();
                     }}
-                    className="flex-1 py-3 text-xs font-bold tracking-wider text-[#5f6a60] hover:text-[#2f3a31] bg-[#ede4d0]/60 hover:bg-[#ede4d0] border border-[#d8c7a8]/40 transition-all rounded-full cursor-pointer outline-none uppercase"
+                    className={`flex-1 text-[#5f6a60] hover:text-[#2f3a31] bg-[#ede4d0]/60 hover:bg-[#ede4d0] border border-[#d8c7a8]/40 transition-all rounded-full cursor-pointer outline-none uppercase font-bold tracking-wider ${isElderMode ? 'py-4 px-6 text-sm' : 'py-3 text-xs'}`}
                   >
-                    Reseal Letter
+                    {t.resealLetter}
                   </button>
                   
                   <button
                     type="submit"
-                    className="flex-1 py-3 bg-linear-to-b from-[#859b80] to-[#6f866a] hover:from-[#7b9076] hover:to-[#5d7259] text-white text-xs font-bold tracking-wider uppercase rounded-full shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-1.5 scale-100 hover:scale-[1.01] active:scale-[0.99] cursor-pointer outline-none"
+                    className={`flex-1 bg-linear-to-b from-[#859b80] to-[#6f866a] hover:from-[#7b9076] hover:to-[#5d7259] text-white font-bold tracking-wider uppercase rounded-full shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-1.5 scale-100 hover:scale-[1.01] active:scale-[0.99] cursor-pointer outline-none ${isElderMode ? 'py-4 px-6 text-sm' : 'py-3 text-xs'}`}
                   >
-                    <span>Next: Take Selfie</span>
+                    <span>{t.nextTakeSelfie}</span>
                     <ChevronRight className="w-4 h-4" />
                   </button>
                 </div>
@@ -484,11 +723,11 @@ export default function App() {
               transition={{ duration: 0.35 }}
               className="w-full bg-[#f9f4e9]/92 backdrop-blur-xs border border-[#d8c7a8] rounded-3xl shadow-2xl p-6 sm:p-8 flex flex-col items-center"
             >
-              <h2 className="font-serif font-semibold text-[#2f3a31] text-2xl text-center mb-1">
-                Capture Your Smile
+              <h2 className={`font-serif font-semibold text-[#2f3a31] text-center mb-1 transition-all ${isElderMode ? 'text-3xl' : 'text-2xl'}`}>
+                {t.selfieTitle}
               </h2>
-              <p className="font-serif italic text-xs text-[#5f6a60] text-center mb-6">
-                Bind your portrait to seal your blessing forever
+              <p className={`font-serif italic text-[#5f6a60] text-center mb-6 transition-all ${isElderMode ? 'text-base font-bold' : 'text-xs'}`}>
+                {t.selfieSub}
               </p>
 
               <CameraCapture
@@ -503,9 +742,9 @@ export default function App() {
                     setStep('letter');
                     clearStatus();
                   }}
-                  className="flex-1 py-3 text-xs font-semibold text-[#5f6a60] hover:text-[#2f3a31] border border-transparent rounded-full hover:bg-[#ede4d0]/60 transition-all cursor-pointer outline-none"
+                  className={`flex-1 text-[#5f6a60] hover:text-[#2f3a31] border border-transparent rounded-full hover:bg-[#ede4d0]/60 transition-all cursor-pointer outline-none uppercase font-bold tracking-wider ${isElderMode ? 'py-4 text-sm' : 'py-3 text-xs'}`}
                 >
-                  Back to Letter
+                  {t.backToLetter}
                 </button>
                 
                 {draft.photoDataUrl && (
@@ -515,9 +754,9 @@ export default function App() {
                       setStep('preview');
                       clearStatus();
                     }}
-                    className="flex-1 py-3 bg-[#7b9076] hover:bg-[#5d7259] text-white text-xs font-bold tracking-wider uppercase rounded-full shadow-md flex items-center justify-center gap-1 scale-100 active:scale-95 transition-all cursor-pointer outline-none"
+                    className={`flex-1 bg-[#7b9076] hover:bg-[#5d7259] text-white font-bold tracking-wider uppercase rounded-full shadow-md flex items-center justify-center gap-1 scale-100 active:scale-95 transition-all cursor-pointer outline-none ${isElderMode ? 'py-4 text-sm font-black' : 'py-3 text-xs'}`}
                   >
-                    <span>PREVIEW LETTER</span>
+                    <span>{t.previewBtnSelector}</span>
                     <ChevronRight className="w-3.5 h-3.5" />
                   </button>
                 )}
@@ -535,11 +774,11 @@ export default function App() {
               transition={{ duration: 0.35 }}
               className="w-full bg-[#f9f4e9]/92 backdrop-blur-xs border border-[#d8c7a8] rounded-3xl shadow-2xl p-6 sm:p-8 flex flex-col items-center"
             >
-              <h2 className="font-serif font-semibold text-[#2f3a31] text-2xl text-center mb-1">
-                Your Wishing Letter
+              <h2 className={`font-serif font-semibold text-[#2f3a31] text-center mb-1 transition-all ${isElderMode ? 'text-3xl' : 'text-2xl'}`}>
+                {t.previewTitle}
               </h2>
-              <p className="font-serif italic text-xs text-[#5f6a60] text-center mb-6">
-                Review your message and photo before melting the wax seal
+              <p className={`font-serif italic text-[#5f6a60] text-center mb-6 transition-all ${isElderMode ? 'text-base font-bold' : 'text-xs'}`}>
+                {t.previewSub}
               </p>
 
               <SubmissionPreview
@@ -553,6 +792,7 @@ export default function App() {
                   setStep('camera');
                   setDraft(prev => ({ ...prev, photoBlob: null, photoDataUrl: null }));
                 }}
+                lang={lang}
               />
 
               <div className="flex gap-4 w-full max-w-[480px] mt-6 border-t border-[#d8c7a8]/30 pt-5">
@@ -563,19 +803,19 @@ export default function App() {
                     setStep('camera');
                     clearStatus();
                   }}
-                  className="flex-1 py-3 text-xs font-bold tracking-wider text-[#5f6a60] hover:text-[#2f3a31] bg-[#ede4d0]/60 hover:bg-[#ede4d0] border border-[#d8c7a8]/40 transition-all rounded-full cursor-pointer outline-none"
+                  className={`flex-1 text-[#5f6a60] hover:text-[#2f3a31] bg-[#ede4d0]/60 hover:bg-[#ede4d0] border border-[#d8c7a8]/40 transition-all rounded-full cursor-pointer outline-none uppercase font-bold tracking-wider ${isElderMode ? 'py-4 text-sm' : 'py-3 text-xs'}`}
                 >
-                  RETIGHTEN PHOTO
+                  {t.retightenPhoto}
                 </button>
                 
                 <button
                   type="button"
                   disabled={isSubmitting}
                   onClick={handleSubmitWishes}
-                  className="flex-1 py-3 bg-linear-to-b from-[#859b80] to-[#6f866a] hover:from-[#7b9076] hover:to-[#5d7259] text-white text-xs font-bold tracking-wider uppercase rounded-full shadow-md flex items-center justify-center gap-1.5 hover:shadow-lg transition-all scale-100 hover:scale-[1.01] active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed outline-none cursor-pointer"
+                  className={`flex-1 bg-linear-to-b from-[#859b80] to-[#6f866a] hover:from-[#7b9076] hover:to-[#5d7259] text-white font-bold tracking-wider uppercase rounded-full shadow-md flex items-center justify-center gap-1.5 hover:shadow-lg transition-all scale-100 hover:scale-[1.01] active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed outline-none cursor-pointer ${isElderMode ? 'py-4 text-sm' : 'py-3 text-xs'}`}
                 >
                   <Send className="w-3.5 h-3.5" />
-                  <span>{isSubmitting ? 'SEALING LETTER...' : 'SUBMIT & SEAL'}</span>
+                  <span>{isSubmitting ? t.sealingLetter : t.submitAndSeal}</span>
                 </button>
               </div>
             </motion.div>
@@ -599,15 +839,15 @@ export default function App() {
                   <CheckCircle2 className="w-16 h-16 text-[#7b9076] drop-shadow-md relative z-10" />
                 </div>
 
-                <h2 className="font-serif font-semibold text-[#2f3a31] text-3xl mb-2">
-                  Thank You!
+                <h2 className={`font-serif font-semibold text-[#2f3a31] mb-2 transition-all ${isElderMode ? 'text-4xl' : 'text-3xl'}`}>
+                  {t.thankYouTitle}
                 </h2>
-                <p className="font-serif italic text-base text-[#5f6a60] mb-4">
-                  Dear {draft.guestName || 'Friend'},
+                <p className={`font-serif italic text-[#5f6a60] mb-4 transition-all ${isElderMode ? 'text-xl font-bold' : 'text-base'}`}>
+                  {t.dear} {draft.guestName || (lang === 'ta' ? 'அன்பரே' : 'Friend')},
                 </p>
                 
-                <p className="font-sans text-xs text-[#5f6a60] leading-relaxed max-w-[340px] mb-8">
-                  Your personalized letter has been successfully sealed and added to the wishing chest. Rupa and Aravind will treasure your thoughtful words and portrait forever.
+                <p className={`font-sans text-[#5f6a60] leading-relaxed mb-8 transition-all ${isElderMode ? 'text-lg font-bold text-neutral-800 max-w-lg' : 'text-xs max-w-[340px]'}`}>
+                  {t.thankYouMsg}
                 </p>
 
                 <div className="h-[1px] w-24 bg-[#d8c7a8]/50 mb-8" />
@@ -615,10 +855,10 @@ export default function App() {
                 <button
                   type="button"
                   onClick={handleReset}
-                  className="w-full max-w-[280px] py-3.5 bg-linear-to-b from-[#859b80] to-[#6f866a] hover:from-[#7b9076] hover:to-[#5d7259] text-white text-xs font-bold tracking-wider uppercase rounded-full shadow-md hover:shadow-lg transition-all scale-100 hover:scale-[1.02] active:scale-95 outline-none cursor-pointer flex items-center justify-center gap-1.5"
+                  className={`w-full max-w-[280px] bg-linear-to-b from-[#859b80] to-[#6f866a] hover:from-[#7b9076] hover:to-[#5d7259] text-white font-bold tracking-wider uppercase rounded-full shadow-md hover:shadow-lg transition-all scale-100 hover:scale-[1.02] active:scale-95 outline-none cursor-pointer flex items-center justify-center gap-1.5 ${isElderMode ? 'py-5 text-sm font-black' : 'py-3.5 text-xs'}`}
                 >
                   <BookOpen className="w-4 h-4" />
-                  <span>WRITE ANOTHER LETTER</span>
+                  <span>{t.writeAnotherText}</span>
                 </button>
               </motion.div>
             </>
@@ -637,14 +877,14 @@ export default function App() {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-sans font-bold uppercase tracking-wide border shadow-xs max-w-xs text-center ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-sans font-bold uppercase tracking-wide border shadow-xs max-w-lg text-center ${
                 statusMessage.includes('✔')
                   ? 'bg-emerald-50 text-emerald-800 border-emerald-200/50'
                   : 'bg-[#ede4d0]/70 text-[#5f6a60] border-[#d8c7a8]/40'
               }`}
             >
               <Sparkles className="w-3.5 h-3.5 text-[#7b9076] shrink-0" />
-              <span className="truncate">{statusMessage}</span>
+              <span>{statusMessage}</span>
             </motion.div>
           ) : (
             <div className="h-6" /> // spacer to keep vertical density
@@ -653,10 +893,10 @@ export default function App() {
 
         {/* Total Letters count badge */}
         <div className="mt-4 flex flex-col items-center select-none">
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-[#7b9076]/6 text-[#3c4a3e] border border-[#d8c7a8]/35 text-[10px] font-sans font-semibold uppercase tracking-widest rounded-full shadow-2xs">
+          <div className={`flex items-center gap-2 px-3 py-1.5 bg-[#7b9076]/6 text-[#3c4a3e] border border-[#d8c7a8]/35 font-sans font-semibold uppercase tracking-widest rounded-full shadow-2xs transition-all ${isElderMode ? 'text-xs border-2' : 'text-[10px]'}`}>
             <span className="w-1.5 h-1.5 rounded-full bg-[#7b9076] animate-pulse shrink-0" />
             <span>
-              Wishes Shared So Far: <span className="font-mono text-xs font-bold text-[#2f3a31] bg-[#7b9076]/12 px-1.5 py-0.5 rounded-sm ml-1">{totalWishesCount !== null ? totalWishesCount : '...'}</span>
+              {t.wishesShared}: <span className="font-mono text-xs font-bold text-[#2f3a31] bg-[#7b9076]/12 px-1.5 py-0.5 rounded-sm ml-1">{totalWishesCount !== null ? totalWishesCount : '...'}</span>
             </span>
           </div>
         </div>
@@ -664,7 +904,7 @@ export default function App() {
         {/* Database offline disclaimer */}
         <div className="flex items-center gap-1.5 text-[9px] font-mono text-[#5f6a60] opacity-35 mt-3.5 uppercase tracking-widest leading-none">
           <Database className="w-3 h-3" />
-          <span>Local Storage Fallback Ready</span>
+          <span>{t.localStorageDisclaimer}</span>
         </div>
 
         {/* Database connection diagnostic doctor */}
@@ -676,7 +916,7 @@ export default function App() {
             className="flex items-center gap-1.5 px-3 py-1.5 bg-[#7b9076]/8 hover:bg-[#7b9076]/15 disabled:opacity-50 text-[9px] font-sans font-bold uppercase tracking-widest text-[#7b9076] rounded-full border border-[#7b9076]/20 hover:border-[#7b9076]/40 cursor-pointer transition-all duration-150 shadow-2xs"
           >
             <Database className="w-3 h-3 shrink-0" />
-            <span>{isDiagnosticRunning ? 'Checking Supabase...' : 'Database Connection Diagnostic'}</span>
+            <span>{isDiagnosticRunning ? 'Checking Supabase...' : t.diagnosticBtn}</span>
           </button>
         </div>
       </footer>
